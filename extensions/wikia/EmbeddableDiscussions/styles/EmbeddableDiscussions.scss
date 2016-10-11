@@ -1,9 +1,6 @@
 @import 'skins/shared/mixins/flexbox';
 @import 'skins/shared/color';
 
-@import 'avatar';
-@import 'ShareModal';
-
 $reply-icon: '/extensions/wikia/EmbeddableDiscussions/images/reply.svg';
 $reply-icon-tiny: '/extensions/wikia/EmbeddableDiscussions/images/reply-tiny.svg';
 $upvote-icon: '/extensions/wikia/EmbeddableDiscussions/images/upvote.svg';
@@ -27,6 +24,10 @@ $plus-icon-size: 34px;
 $font-size-small: 12px;
 $font-size-regular: 14px;
 $font-size-large: 16px;
+
+@import 'avatar';
+@import 'ShareModal';
+@import 'SettingsModal';
 
 .embeddable-discussions-module {
 	@include flexbox();
@@ -86,6 +87,18 @@ $font-size-large: 16px;
 
 	.embeddable-discussions-content {
 		font-size: $font-size-regular;
+	}
+
+	.embeddable-discussions-edit {
+		color: $color-links;
+		font-size: $font-size-small;
+		margin-left: 6px;
+		text-transform: uppercase;
+	}
+
+	.embeddable-discussions-edit-icon {
+		fill: $color-buttons;
+		width: 16px;
 	}
 
 	.embeddable-discussions-header-container {

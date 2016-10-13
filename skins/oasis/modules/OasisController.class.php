@@ -266,6 +266,9 @@ class OasisController extends WikiaController {
 			$this->krux = AnalyticsEngine::track('Krux', AnalyticsEngine::EVENT_PAGEVIEW);
 			$this->ubisoft = AnalyticsEngine::track('Ubisoft', AnalyticsEngine::EVENT_PAGEVIEW);
 			$this->netzathleten = AnalyticsEngine::track('NetzAthleten', AnalyticsEngine::EVENT_PAGEVIEW);
+			$this->recoveryHeadBootstrapCode = ARecoveryBootstrapCode::getHeadBootstrapCode();
+			$this->recoveryTopBodyBootstrapCode = ARecoveryBootstrapCode::getTopBodyBootstrapCode();
+			$this->recoveryBottomBodyBootstrapCode = ARecoveryBootstrapCode::getBottomBodyBootstrapCode();
 		}
 
 		wfProfileOut(__METHOD__);

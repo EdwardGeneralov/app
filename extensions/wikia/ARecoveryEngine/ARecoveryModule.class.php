@@ -24,9 +24,13 @@ class ARecoveryModule {
 		return F::app()->sendRequest( 'ARecoveryEngineApiController', 'getBootstrap' );
 	}
 	
-
 	public static function isLockEnabled() {
 		$user = F::app()->wg->User;
 		return self::isEnabled() && ( $user && !$user->isLoggedIn() );
+	}
+	
+	public static function isPageFairRecoveryEnabled() {
+		//TODO: change this
+		return true;
 	}
 }

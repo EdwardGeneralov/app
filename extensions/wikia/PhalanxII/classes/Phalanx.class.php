@@ -19,6 +19,9 @@ class Phalanx implements arrayaccess {
 	const FLAG_REGEX = 2;
 	const FLAG_CASE = 4;
 
+	const ACTION_ADD_FILTER = 'add';
+	const ACTION_MODIFY_FILTER = 'edit';
+
 	private $blockId = 0;
 	private $db_table = 'phalanx';
 
@@ -99,7 +102,7 @@ class Phalanx implements arrayaccess {
 	public function load() {
 		wfProfileIn( __METHOD__ );
 
-		$dbr = wfGetDB( DB_SLAVE, array(), $this->app->wg->ExternalSharedDB );
+		$dbr = $this->getDatabase( DB_SLAVE );
 
 		$row = $dbr->selectRow( $this->db_table, '*', array( 'p_id' => $this->blockId ), __METHOD__ );
 
@@ -127,37 +130,85 @@ class Phalanx implements arrayaccess {
 	public function save() {
 		wfProfileIn( __METHOD__ );
 
-		if ( ( $this->data['type'] & self::TYPE_USER ) && User::isIP( $this->data['text'] ) ) {
-			if ( wfIsTrustedProxy( $this->data['text'] ) ) {
-				// Don't allow to set blocks for trusted proxies or Wikia network hosts
-				return false;
-			}
-
-			$this->data['ip_hex'] = IP::toHex( $this->data['text'] );
+		if ( !$this->validateUserFilter() ) {
+			return false;
 		}
 
-		$dbw = wfGetDB( DB_MASTER, array(), $this->wg->ExternalSharedDB );
+		$dbw = $this->getDatabase( DB_MASTER );
 		if ( empty( $this->data['id'] ) ) {
 			/* add block */
 			$dbw->insert( $this->db_table, $this->mapToDB(), __METHOD__ );
-			$action = 'add';
+			$action = static::ACTION_ADD_FILTER;
 		} else {
 			$dbw->update( $this->db_table, $this->mapToDB(), array( 'p_id' => $this->data['id'] ), __METHOD__ );
-			$action = 'edit';
+			$action = static::ACTION_MODIFY_FILTER;
 		};
 
 		if ( $dbw->affectedRows() ) {
-			if ( $action == 'add' ) {
+			if ( $action === static::ACTION_ADD_FILTER ) {
 				$this->data['id'] = $dbw->insertId();
 			}
 			$this->log( $action );
 		} else {
 			$action = '';
 		}
+		// Commit the transaction so that Phalanx service will see the update when it is notified
 		$dbw->commit();
 
 		wfProfileOut( __METHOD__ );
 		return ( $action ) ? $this->data['id'] : false;
+	}
+
+	/**
+	 * SUS-1207: Inserts a Phalanx bulk filter (filter for multiple targets with shared filter settings) into the database
+	 * Uses single INSERT operation
+	 * @param string[] $bulkTargets filter targets
+	 * @return int[] array of block IDs inserted
+	 */
+	public function insertBulkFilter( array &$bulkTargets ): array {
+		$rows = [];
+		foreach ( $bulkTargets as $target ) {
+			$this->data['text'] = $target;
+
+			if ( !$this->validateUserFilter() ) {
+				continue;
+			}
+
+			$rows[] = $this->mapToDB();
+		}
+
+		$dbw = $this->getDatabase( DB_MASTER );
+		$dbw->insert( $this->db_table, $rows, __METHOD__ );
+
+		// If the insert was successful, we need to provide the block IDs generated
+		// so that we can notify the Scala service to load them into memory
+		$insertCount = $dbw->affectedRows();
+		$rowCount = count( $rows );
+
+		Wikia\Util\Assert::true( $insertCount === $rowCount, 'Insert failure for Phalanx bulk filter', [
+			'bulkEntriesCount' => $rowCount,
+			'insertedCount' => $insertCount,
+			'targets' => $bulkTargets
+		] );
+
+		$blockIds = [];
+		if ( $insertCount ) {
+			$blockId = $dbw->insertId();
+			foreach ( $rows as $row ) {
+				$this->data['id'] = $blockId;
+				$this->data['text'] = $row['p_text'];
+
+				// log block insertion to MediaWiki Special:Log
+				$this->log( static::ACTION_ADD_FILTER );
+				$blockIds[] = $blockId;
+				$blockId++;
+			}
+		}
+
+		// Finally, commit the transaction so that Phalanx service will see the update when it is notified
+		$dbw->commit();
+
+		return $blockIds;
 	}
 
 	public function delete() {
@@ -170,11 +221,12 @@ class Phalanx implements arrayaccess {
 			return $return;
 		}
 
-		$dbw = wfGetDB( DB_MASTER, [], $this->wg->ExternalSharedDB );
+		$dbw = $this->getDatabase( DB_MASTER );
 		$dbw->delete( $this->db_table, ['p_id' => $this->data['id']], __METHOD__ );
 
 		$removed = $dbw->affectedRows();
 
+		// Commit the transaction so that Phalanx service will see the update when it is notified
 		$dbw->commit();
 
 		if ( $removed ) {
@@ -223,6 +275,50 @@ class Phalanx implements arrayaccess {
 			$fields[ 'p_' . $key ] = $field;
 		}
 		return $fields;
+	}
+
+	/**
+	 * If this is an user filter, check if it is not a trusted network IP address
+	 * If it's an IP address, format it correctly
+	 * @return bool true if this user filter is valid, false if it would block trusted host
+	 */
+	private function validateUserFilter(): bool {
+		if ( ( $this->data['type'] & self::TYPE_USER ) && User::isIP( $this->data['text'] ) ) {
+			if ( wfIsTrustedProxy( $this->data['text'] ) ) {
+				// Don't allow to set blocks for trusted proxies or Wikia network hosts
+				return false;
+			}
+
+			$this->data['ip_hex'] = IP::toHex( $this->data['text'] );
+		}
+
+		return true;
+	}
+
+	/**
+	 * Get connection to Phalanx table on external shared DB
+	 *
+	 * Phalanx table is encoded in utf-8, while in most cases MW communicate with
+	 * databases using latin1, so sometimes we get strings in wrong encoding.
+	 * The only way to force utf-8 communication (adding SET NAMES utf8) is setting
+	 * global variable wgDBmysql5.
+	 *
+	 * @see https://github.com/Wikia/app/blob/dev/includes/db/DatabaseMysqlBase.php#L113
+	 *
+	 * @param int $dbType master or slave
+	 * @return DatabaseBase
+	 */
+	protected function getDatabase( int $dbType = DB_SLAVE ): DatabaseBase {
+		$wrapper = new Wikia\Util\GlobalStateWrapper( [
+			'wgDBmysql5' => true
+		] );
+
+		$db = $wrapper->wrap( function () use ( $dbType ) {
+			global $wgExternalSharedDB;
+			return wfGetDB( $dbType, [], $wgExternalSharedDB );
+		} );
+
+		return $db;
 	}
 
 	private function log( $action ) {

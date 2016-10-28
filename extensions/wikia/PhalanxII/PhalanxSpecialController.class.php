@@ -240,7 +240,9 @@ class PhalanxSpecialController extends WikiaSpecialPageController {
 			'multitext'  => $this->wg->Request->getText( 'wpPhalanxFilterBulk' ),
 			'expire'     => $expire
 		);
-		if ( !wfRunHooks( "EditPhalanxBlock", array( &$data ) ) ) {
+
+		// SUS-1207: call handler directly, don't use hook dispatcher for single handler
+		if ( !PhalanxHooks::onEditPhalanxBlock( $data ) ) {
 			$ret = self::RESULT_ERROR;
 		} else {
 			$ret = $isBlockUpdate ? self::RESULT_BLOCK_UPDATED : self::RESULT_BLOCK_ADDED;
@@ -331,7 +333,8 @@ class PhalanxSpecialController extends WikiaSpecialPageController {
 		}
 
 		// delete a block
-		if ( !wfRunHooks( "DeletePhalanxBlock", array( $id ) ) ) {
+		// SUS-1207: call handler directly, don't use hook dispatcher for single handler
+		if ( !PhalanxHooks::onDeletePhalanxBlock( $id ) ) {
 			$result = false;
 		} else {
 			$result = true;

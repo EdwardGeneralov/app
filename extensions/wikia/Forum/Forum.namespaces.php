@@ -160,6 +160,15 @@ $namespaces['zh'] = [
 ];
 
 /**
+ * Urdu (اُردُو)
+ */
+$namespaces['ur'] = [
+	NS_WIKIA_FORUM_BOARD		=> 'مرکزیخیال_موضوع',
+	NS_WIKIA_FORUM_TOPIC_BOARD	=> 'ایک_عامموضوع',
+	NS_WIKIA_FORUM_BOARD_THREAD	=> 'موضوع_فورم کے',
+];
+
+/**
  * Aliases
  */
 $namespaceAliases = [

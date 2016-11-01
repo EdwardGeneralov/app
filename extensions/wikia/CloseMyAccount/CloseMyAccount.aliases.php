@@ -33,3 +33,8 @@ $specialPageAliases['vi'] = array(
 $specialPageAliases['ja'] = array(
 	'CloseMyAccount' => array( 'アカウント停止' ),
 );
+
+/** Russian (Русский) */
+$specialPageAliases['ru'] = array(
+	'CloseMyAccount' => array( 'Закрыть_моя_аккаунт' ),
+);
